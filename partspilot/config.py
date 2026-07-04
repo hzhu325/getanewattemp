@@ -42,6 +42,20 @@ class Config:
     clawbot_poll_timeout: float = field(default_factory=lambda: float(_env("CLAWBOT_POLL_TIMEOUT", "50")))
 
     @property
+    def clawbot_endpoints(self) -> dict:
+        """ilink 端点路径覆盖（官方字段如有出入，改环境变量即可，不用改代码）。"""
+        overrides = {}
+        for key, env_name in {
+            "qrcode": "CLAWBOT_EP_QRCODE",
+            "qrcode_status": "CLAWBOT_EP_QRCODE_STATUS",
+            "get_updates": "CLAWBOT_EP_GET_UPDATES",
+            "send_message": "CLAWBOT_EP_SEND_MESSAGE",
+        }.items():
+            if value := _env(env_name):
+                overrides[key] = value
+        return overrides
+
+    @property
     def db_path(self) -> Path:
         return self.data_dir / "partspilot.db"
 

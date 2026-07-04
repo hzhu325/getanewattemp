@@ -1,5 +1,10 @@
 """启动 PartsPilot：python run.py"""
 
+import sys
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")  # Windows 控制台默认编码打不了中文
+
 import uvicorn
 
 from partspilot.api.app import create_app

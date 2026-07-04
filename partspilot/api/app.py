@@ -63,7 +63,11 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.state.secret = config.load_secret()
     app.state.clawbot = (
         ClawBotChannel(
-            ClawBotClient(config.clawbot_base_url, poll_timeout=config.clawbot_poll_timeout),
+            ClawBotClient(
+                config.clawbot_base_url,
+                endpoints=config.clawbot_endpoints,
+                poll_timeout=config.clawbot_poll_timeout,
+            ),
             config.clawbot_credentials_path,
         )
         if config.clawbot_enabled
