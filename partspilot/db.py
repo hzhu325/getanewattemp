@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     needs_attention INTEGER NOT NULL DEFAULT 0,
     priority INTEGER NOT NULL DEFAULT 0,
     tags TEXT NOT NULL DEFAULT '[]',
+    last_context_token TEXT NOT NULL DEFAULT '',
     last_message_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     last_welcome_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
@@ -49,6 +50,7 @@ CREATE TABLE IF NOT EXISTS messages (
     msg_type TEXT NOT NULL DEFAULT 'text',
     content TEXT NOT NULL DEFAULT '',
     is_auto INTEGER NOT NULL DEFAULT 0,
+    delivered INTEGER NOT NULL DEFAULT 1,
     tags TEXT NOT NULL DEFAULT '[]',
     analysis TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
@@ -148,7 +150,9 @@ CREATE TABLE IF NOT EXISTS settings (
 
 
 def connect(db_path: Path | str) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path), timeout=10)
+    # 每个请求/任务独享连接且顺序使用，跨线程传递是安全的
+    # （FastAPI 同步路由在线程池执行，连接在事件循环线程创建）
+    conn = sqlite3.connect(str(db_path), timeout=10, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")

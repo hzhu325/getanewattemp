@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PartsPilot 汽配工作台</title>
+<link rel="stylesheet" href="app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔧</text></svg>">
+</head>
+<body>
+<div id="login-overlay" class="login-overlay hidden">
+  <form id="login-form" class="login-card">
+    <div class="login-logo">🔧</div>
+    <h1>PartsPilot 汽配工作台</h1>
+    <p class="muted">请输入管理密码</p>
+    <input type="password" id="login-password" placeholder="密码" autocomplete="current-password">
+    <button type="submit" class="btn btn-primary btn-block">进入</button>
+    <p id="login-error" class="login-error"></p>
+  </form>
+</div>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-icon">🔧</span>
+      <div>
+        <div class="brand-name">PartsPilot</div>
+        <div class="brand-sub">汽配智能工作台</div>
+      </div>
+    </div>
+    <nav id="nav">
+      <a href="#/" data-page="workbench"><span>📋</span>工作台</a>
+      <a href="#/conversations" data-page="conversations"><span>💬</span>会话</a>
+      <a href="#/inquiries" data-page="inquiries"><span>🧾</span>询价单</a>
+      <a href="#/inventory" data-page="inventory"><span>📦</span>库存</a>
+      <a href="#/vin" data-page="vin"><span>🚗</span>VIN 查询</a>
+      <a href="#/rules" data-page="rules"><span>⚙️</span>回复规则</a>
+      <a href="#/simulator" data-page="simulator"><span>🧪</span>模拟器</a>
+      <a href="#/settings" data-page="settings"><span>🔩</span>设置</a>
+    </nav>
+    <div class="sidebar-foot">
+      <div id="channel-dot" class="channel-status"><span class="dot dot-gray"></span>通道检测中…</div>
+    </div>
+  </aside>
+  <main id="main" class="main"></main>
+</div>
+
+<div id="toast-box"></div>
+<div id="modal-root"></div>
+<script src="app.js"></script>
+</body>
+</html>
