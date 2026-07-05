@@ -6,8 +6,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import random
 import sqlite3
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable
@@ -25,6 +27,19 @@ logger = logging.getLogger(__name__)
 
 # 发送函数：由通道注入；返回是否发送成功
 Sender = Callable[[str], Awaitable[bool]]
+
+
+def reply_delay_seconds(settings: dict) -> float:
+    """自动回复随机延迟（防机器痕迹）；上限设 0 关闭。"""
+    try:
+        low = float(settings.get("reply_delay_min", 0))
+        high = float(settings.get("reply_delay_max", 0))
+    except ValueError:
+        return 0.0
+    if high <= 0:
+        return 0.0
+    low = max(0.0, min(low, high))
+    return random.uniform(low, high)
 
 
 @dataclass
@@ -152,6 +167,10 @@ async def process_message(
         sent_ok = True
         if sender is not None:
             try:
+                # 只对真实通道延迟；webhook 同步响应/模拟器不受影响
+                delay = reply_delay_seconds(settings)
+                if delay > 0:
+                    await asyncio.sleep(delay)
                 sent_ok = await sender(decision.text)
             except Exception:
                 logger.exception("通道发送失败 conversation=%s", conversation_id)

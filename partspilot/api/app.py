@@ -16,6 +16,7 @@ from partspilot.api import auth
 from partspilot.api.routes import router
 from partspilot.channels.clawbot import ClawBotChannel, ClawBotClient
 from partspilot.config import Config, get_config
+from partspilot.services import backup as backup_service
 from partspilot.services import store
 from partspilot.services.pipeline import process_message
 
@@ -36,6 +37,20 @@ def create_app(config: Config | None = None) -> FastAPI:
         finally:
             conn.close()
 
+        async def backup_loop():
+            # 每天第一次启动/跨天后自动备份一次，保留最近 30 份
+            while True:
+                try:
+                    if config.db_path.exists() and not backup_service.has_backup_today(config.backup_dir):
+                        path = backup_service.create_backup(config.db_path, config.backup_dir)
+                        backup_service.prune_backups(config.backup_dir)
+                        logger.info("每日自动备份完成: %s", path.name)
+                except Exception:
+                    logger.exception("自动备份失败")
+                await asyncio.sleep(3600)
+
+        backup_task = asyncio.create_task(backup_loop())
+
         task = None
         if app.state.clawbot is not None:
 
@@ -51,12 +66,13 @@ def create_app(config: Config | None = None) -> FastAPI:
 
         yield
 
-        if task:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+        for background in (task, backup_task):
+            if background:
+                background.cancel()
+                try:
+                    await background
+                except asyncio.CancelledError:
+                    pass
 
     app = FastAPI(title="PartsPilot 汽配智能工作台", lifespan=lifespan)
     app.state.config = config

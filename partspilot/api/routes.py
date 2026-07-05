@@ -6,15 +6,19 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import re
 import sqlite3
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from partspilot.api import auth
+from partspilot.services import backup as backup_service
 from partspilot.channels.base import IncomingMessage
 from partspilot.nlu.analyzer import analyze
 from partspilot.reply.engine import decide
@@ -168,8 +172,39 @@ def conversation_messages(conversation_id: int, request: Request):
         "SELECT * FROM drafts WHERE conversation_id=? AND status='pending' ORDER BY id",
         (conversation_id,),
     ).fetchall()
+
+    # 客户画像：历史询价/成交
+    customer_id = conversation["customer_id"]
+    stats = conn.execute(
+        "SELECT COUNT(*) AS total, "
+        "SUM(CASE WHEN status='closed' THEN 1 ELSE 0 END) AS closed "
+        "FROM inquiries WHERE customer_id=?",
+        (customer_id,),
+    ).fetchone()
+    last_closed = conn.execute(
+        "SELECT part_type, brand, vehicle_model, engine_model, gearbox_model "
+        "FROM inquiries WHERE customer_id=? AND status='closed' "
+        "ORDER BY updated_at DESC LIMIT 1",
+        (customer_id,),
+    ).fetchone()
+    first_seen = conn.execute(
+        "SELECT created_at FROM customers WHERE id=?", (customer_id,)
+    ).fetchone()
+    customer_stats = {
+        "inquiry_count": stats["total"] or 0,
+        "closed_count": stats["closed"] or 0,
+        "first_seen": (first_seen["created_at"] or "")[:10] if first_seen else "",
+        "last_closed": " ".join(
+            v for v in (
+                last_closed["brand"], last_closed["vehicle_model"],
+                last_closed["engine_model"] or last_closed["gearbox_model"],
+            ) if v
+        ) if last_closed else "",
+    }
+
     return {
         "conversation": {**dict(conversation), "tags": json.loads(conversation["tags"])},
+        "customer_stats": customer_stats,
         "messages": [
             {**dict(m), "tags": json.loads(m["tags"])} for m in reversed(messages)
         ],
@@ -426,6 +461,165 @@ def set_inventory_status(item_id: int, body: InventoryStatusBody, request: Reque
         raise HTTPException(404, "库存不存在")
     conn.commit()
     return {"ok": True}
+
+
+# ────────────────── inventory 导入/导出（CSV，Excel 直接打开） ──────────────────
+
+_CSV_HEADERS = ["品类", "内部编号", "名称", "品牌", "车型", "年份", "排量",
+                "发动机型号", "变速箱型号", "成色", "参考价", "状态", "备注"]
+_PART_CN = {"engine": "发动机", "gearbox": "变速箱", "accessory": "附件"}
+_PART_EN = {v: k for k, v in _PART_CN.items()}
+_STATUS_CN = {"in_stock": "在售", "reserved": "已预订", "sold": "已售出", "inactive": "下架"}
+_STATUS_EN = {v: k for k, v in _STATUS_CN.items()}
+
+
+def _csv_response(rows: list[list], filename: str) -> Response:
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(_CSV_HEADERS)
+    writer.writerows(rows)
+    # UTF-8 BOM：让中文 Excel 直接打开不乱码
+    return Response(
+        content="﻿" + buffer.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/inventory/template")
+def inventory_template():
+    sample = ["发动机", "E001", "迈腾 EA888 2.0T 发动机总成", "大众", "迈腾", "2018",
+              "2.0T", "CUF", "", "拆车件 9成新", "8500", "在售", "示例行，导入前请删除"]
+    return _csv_response([sample], "inventory_template.csv")
+
+
+@router.get("/inventory/export")
+def inventory_export(request: Request):
+    rows = []
+    for x in _db(request).execute("SELECT * FROM inventory_items ORDER BY id").fetchall():
+        rows.append([
+            _PART_CN.get(x["part_type"], x["part_type"]), x["internal_code"], x["display_name"],
+            x["brand"], x["vehicle_model"], x["year"], x["displacement"],
+            x["engine_model"], x["gearbox_model"], x["quality_grade"],
+            "" if x["price"] is None else f"{x['price']:g}",
+            _STATUS_CN.get(x["status"], x["status"]), x["note"],
+        ])
+    return _csv_response(rows, "inventory.csv")
+
+
+class ImportBody(BaseModel):
+    csv_text: str
+
+
+@router.post("/inventory/import")
+def inventory_import(body: ImportBody, request: Request):
+    """按「内部编号」新增或更新；返回逐行结果。前端已处理 UTF-8/GBK 解码。"""
+    conn = _db(request)
+    reader = csv.reader(io.StringIO(body.csv_text.lstrip("﻿")))
+    try:
+        header = next(reader)
+    except StopIteration:
+        raise HTTPException(400, "文件是空的")
+    header = [h.strip() for h in header]
+    missing = [h for h in ("内部编号", "名称") if h not in header]
+    if missing:
+        raise HTTPException(400, f"表头缺少必需列：{'、'.join(missing)}（请用「下载模板」的格式）")
+    index = {name: header.index(name) for name in _CSV_HEADERS if name in header}
+
+    def cell(row: list, name: str) -> str:
+        i = index.get(name, -1)
+        return row[i].strip() if 0 <= i < len(row) else ""
+
+    created = updated = 0
+    errors: list[str] = []
+    for line_no, row in enumerate(reader, start=2):
+        if not any(c.strip() for c in row):
+            continue
+        code, name = cell(row, "内部编号"), cell(row, "名称")
+        if not code or not name:
+            errors.append(f"第{line_no}行：内部编号和名称必填")
+            continue
+        part_cn = cell(row, "品类")
+        part_type = _PART_EN.get(part_cn, "")
+        if part_cn and not part_type:
+            errors.append(f"第{line_no}行：品类「{part_cn}」不认识（只能是 发动机/变速箱/附件）")
+            continue
+        status_cn = cell(row, "状态")
+        status = _STATUS_EN.get(status_cn, "")
+        if status_cn and not status:
+            errors.append(f"第{line_no}行：状态「{status_cn}」不认识（在售/已预订/已售出/下架）")
+            continue
+        price_text = cell(row, "参考价")
+        price = None
+        if price_text:
+            try:
+                price = float(price_text.replace(",", "").replace("¥", ""))
+            except ValueError:
+                errors.append(f"第{line_no}行：参考价「{price_text}」不是数字")
+                continue
+
+        values = {
+            "part_type": part_type or "engine",
+            "display_name": name,
+            "brand": cell(row, "品牌"),
+            "vehicle_model": cell(row, "车型"),
+            "year": cell(row, "年份"),
+            "displacement": cell(row, "排量"),
+            "engine_model": cell(row, "发动机型号"),
+            "gearbox_model": cell(row, "变速箱型号"),
+            "quality_grade": cell(row, "成色"),
+            "price": price,
+            "status": status or "in_stock",
+            "note": cell(row, "备注"),
+        }
+        exists = conn.execute(
+            "SELECT id FROM inventory_items WHERE internal_code=?", (code,)
+        ).fetchone()
+        if exists:
+            conn.execute(
+                "UPDATE inventory_items SET " + ", ".join(f"{k}=?" for k in values)
+                + ", updated_at=datetime('now','localtime') WHERE internal_code=?",
+                (*values.values(), code),
+            )
+            updated += 1
+        else:
+            conn.execute(
+                f"INSERT INTO inventory_items (internal_code, {', '.join(values)}) "
+                f"VALUES (?, {', '.join('?' * len(values))})",
+                (code, *values.values()),
+            )
+            created += 1
+    conn.commit()
+    return {"created": created, "updated": updated, "errors": errors}
+
+
+# ─────────────────────────── backup ───────────────────────────
+
+
+@router.post("/backup")
+def backup_now(request: Request):
+    config = request.app.state.config
+    path = backup_service.create_backup(config.db_path, config.backup_dir)
+    backup_service.prune_backups(config.backup_dir)
+    return {"ok": True, "name": path.name, "size": path.stat().st_size}
+
+
+@router.get("/backup/list")
+def backup_list(request: Request):
+    config = request.app.state.config
+    return {
+        "dir": str(config.backup_dir),
+        "backups": backup_service.list_backups(config.backup_dir),
+    }
+
+
+@router.get("/backup/download")
+def backup_download(request: Request):
+    """现做一份新备份并下载（存到 U 盘/网盘就靠它）。"""
+    config = request.app.state.config
+    path = backup_service.create_backup(config.db_path, config.backup_dir)
+    backup_service.prune_backups(config.backup_dir)
+    return FileResponse(path, filename=path.name, media_type="application/octet-stream")
 
 
 # ─────────────────────────── reply rules ───────────────────────────

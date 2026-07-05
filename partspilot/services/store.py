@@ -16,7 +16,9 @@ DEFAULT_SETTINGS = {
     "welcome_cooldown_hours": "12",
     "rate_limit_per_hour": "6",
     "attention_threshold": "3",     # 优先级达到该值 → 标记待处理
-    "vin_mock": "0",                # 1 = 未配置 17vin 时用演示数据补全
+    "vin_mock": "0",                # 1 = 未配置在线数据源时用演示数据补全
+    "reply_delay_min": "2",         # 自动回复随机延迟下限（秒），更像人工
+    "reply_delay_max": "6",         # 上限；设 0 关闭延迟
 }
 
 

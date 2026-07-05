@@ -244,6 +244,12 @@ async function openConversation(id) {
       </label>
       <button class="btn btn-sm" id="mark-read">标记已读</button>
     </div>
+    ${(() => {
+      const s = data.customer_stats;
+      if (!s || !s.inquiry_count) return `<div class="muted" style="padding:6px 16px;font-size:.82rem;border-bottom:1px solid var(--border)">📇 新客户，暂无询价记录</div>`;
+      return `<div class="muted" style="padding:6px 16px;font-size:.82rem;border-bottom:1px solid var(--border)">
+        📇 历史询价 ${s.inquiry_count} 次 · 成交 ${s.closed_count} 次${s.last_closed ? ` · 上次成交：${esc(s.last_closed)}` : ""}${s.first_seen ? ` · ${esc(s.first_seen)} 首次联系` : ""}</div>`;
+    })()}
     <div class="chat-body" id="chat-body">
       ${data.messages.map(m => `
         <div class="bubble ${m.direction}">${esc(m.content)}
@@ -339,9 +345,13 @@ async function renderInquiries() {
 async function renderInventory() {
   main.innerHTML = `
     <div class="page-head"><div class="page-title">库存</div>
-      <div style="display:flex;gap:8px">
-        <input id="inv-q" placeholder="搜名称/型号/编号" style="width:200px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input id="inv-q" placeholder="搜名称/型号/编号" style="width:180px">
+        <button class="btn" id="inv-template">下载模板</button>
+        <button class="btn" id="inv-import">导入 CSV</button>
+        <button class="btn" id="inv-export">导出</button>
         <button class="btn btn-primary" id="inv-add">＋ 新增库存</button>
+        <input type="file" id="inv-file" accept=".csv" class="hidden">
       </div></div>
     <div class="card" id="inv-table"></div>`;
   const load = async () => {
@@ -369,6 +379,26 @@ async function renderInventory() {
   };
   $("#inv-q").oninput = debounce(load, 300);
   $("#inv-add").onclick = () => inventoryForm(null, load);
+  $("#inv-template").onclick = () => { location.href = "/api/inventory/template"; };
+  $("#inv-export").onclick = () => { location.href = "/api/inventory/export"; };
+  $("#inv-import").onclick = () => $("#inv-file").click();
+  $("#inv-file").onchange = async e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    e.target.value = "";
+    const buffer = await file.arrayBuffer();
+    let text;
+    try { text = new TextDecoder("utf-8", { fatal: true }).decode(buffer); }
+    catch { text = new TextDecoder("gbk").decode(buffer); }  // 中文 Excel 存的 CSV
+    try {
+      const r = await api("/inventory/import", { json: { csv_text: text } });
+      toast(`导入完成：新增 ${r.created}，更新 ${r.updated}${r.errors.length ? `，失败 ${r.errors.length}` : ""}`);
+      if (r.errors.length) modal(`<h3>导入问题（${r.errors.length} 行）</h3>
+        <ul class="note-list">${r.errors.map(x => `<li>${esc(x)}</li>`).join("")}</ul>
+        <div class="modal-actions"><button class="btn btn-primary" onclick="document.getElementById('modal-root').innerHTML=''">知道了</button></div>`);
+      load();
+    } catch (err) { toast(err.message, true); }
+  };
   await load();
 }
 
@@ -647,11 +677,22 @@ async function renderSettings() {
         <div class="field"><label>VIN 演示模式</label><select id="s-vin_mock">
           <option value="0"${settings.vin_mock === "0" ? " selected" : ""}>关闭（真实解码）</option>
           <option value="1"${settings.vin_mock === "1" ? " selected" : ""}>开启（演示用假数据）</option></select></div>
+        <div class="field"><label>自动回复延迟·最小秒（更像人工）</label><input id="s-reply_delay_min" type="number" value="${esc(settings.reply_delay_min)}"></div>
+        <div class="field"><label>自动回复延迟·最大秒（0=不延迟）</label><input id="s-reply_delay_max" type="number" value="${esc(settings.reply_delay_max)}"></div>
       </div>
       <div class="modal-actions"><button class="btn btn-primary" id="s-save">保存设置</button></div>
       <p class="muted" style="font-size:.83rem">在线 VIN 数据源：${settings._vin_provider
         ? `<span class="chip chip-green">已接入 ${{ jisuapi: "极速数据", tianapi: "天行数据", "17vin": "17vin" }[settings._vin_provider] || settings._vin_provider}</span>`
         : '未配置（推荐极速数据：注册送100次，之后约4.5分/次。设置环境变量 JISU_VIN_APPKEY 后重启，详见 docs/VIN_PROVIDERS.md）'}</p>
+    </div>
+
+    <div class="card"><h3>💾 数据备份</h3>
+      <p class="muted" style="font-size:.86rem">系统每天自动备份一次（保留最近 30 份）。要存到 U 盘/网盘，点「备份并下载」把文件存过去即可。</p>
+      <div style="margin:10px 0;display:flex;gap:8px">
+        <button class="btn btn-primary" id="bk-download">备份并下载</button>
+        <button class="btn" id="bk-now">只备份到本机</button>
+      </div>
+      <div id="bk-list" class="muted" style="font-size:.84rem">加载中…</div>
     </div>
 
     <div class="card"><h3>📱 微信小龙虾（ClawBot）直连</h3>
@@ -678,11 +719,27 @@ async function renderSettings() {
   $("#s-save").onclick = async () => {
     const body = {};
     ["shop_name", "attention_threshold", "private_reply_mode", "group_reply_mode",
-      "quiet_start", "quiet_end", "rate_limit_per_hour", "welcome_cooldown_hours", "vin_mock"]
+      "quiet_start", "quiet_end", "rate_limit_per_hour", "welcome_cooldown_hours",
+      "vin_mock", "reply_delay_min", "reply_delay_max"]
       .forEach(k => body[k] = $(`#s-${k}`).value);
     await api("/settings", { method: "PUT", json: body });
     toast("设置已保存");
   };
+
+  const loadBackups = async () => {
+    const r = await api("/backup/list");
+    $("#bk-list").innerHTML = r.backups.length
+      ? `备份目录：<code>${esc(r.dir)}</code><br>` + r.backups.slice(0, 8).map(b =>
+          `${esc(b.name)}（${(b.size / 1024 / 1024).toFixed(1)}MB · ${esc(b.created_at)}）`).join("<br>")
+        + (r.backups.length > 8 ? `<br>…共 ${r.backups.length} 份` : "")
+      : "还没有备份";
+  };
+  $("#bk-now").onclick = async () => {
+    const r = await api("/backup", { method: "POST" });
+    toast(`已备份：${r.name}`); loadBackups();
+  };
+  $("#bk-download").onclick = () => { location.href = "/api/backup/download"; setTimeout(loadBackups, 1500); };
+  loadBackups();
   const copyBtn = $("#wh-copy");
   if (copyBtn) copyBtn.onclick = () => { navigator.clipboard.writeText($("#wh-token").textContent); toast("已复制"); };
   const bindBtn = $("#cb-bind");

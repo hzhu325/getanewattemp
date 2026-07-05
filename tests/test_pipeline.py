@@ -27,6 +27,9 @@ def conn(config):
     db.init_db(config.db_path)
     connection = db.connect(config.db_path)
     store.ensure_settings(connection)
+    # 测试与真实时钟解耦：关掉静默时段（否则晚上跑测试 send 会变 draft）
+    store.set_setting(connection, "quiet_start", "")
+    store.set_setting(connection, "quiet_end", "")
     yield connection
     connection.close()
 
@@ -137,6 +140,8 @@ async def test_welcome_cooldown_across_messages(conn, config):
 
 @pytest.mark.anyio
 async def test_send_failure_falls_back_to_draft(conn, config):
+    store.set_setting(conn, "reply_delay_max", "0")  # 测试不等随机延迟
+
     async def failing_sender(text: str) -> bool:
         return False
 

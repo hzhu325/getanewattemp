@@ -72,6 +72,10 @@ class Config:
         return self.data_dir / "partspilot.db"
 
     @property
+    def backup_dir(self) -> Path:
+        return self.data_dir / "backups"
+
+    @property
     def clawbot_credentials_path(self) -> Path:
         return self.data_dir / "clawbot_account.json"
 

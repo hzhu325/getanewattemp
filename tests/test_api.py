@@ -25,6 +25,8 @@ def make_client(tmp_path, password=""):
 def client(tmp_path):
     test_client, config = make_client(tmp_path)
     with test_client:
+        # 测试与真实时钟解耦：关掉静默时段
+        test_client.put("/api/settings", json={"quiet_start": "", "quiet_end": ""})
         yield test_client
 
 
