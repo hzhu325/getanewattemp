@@ -649,7 +649,9 @@ async function renderSettings() {
           <option value="1"${settings.vin_mock === "1" ? " selected" : ""}>开启（演示用假数据）</option></select></div>
       </div>
       <div class="modal-actions"><button class="btn btn-primary" id="s-save">保存设置</button></div>
-      <p class="muted" style="font-size:.83rem">17vin 在线解码：${settings._seventeen_vin_configured ? '<span class="chip chip-green">已配置</span>' : '未配置（设置环境变量 SEVENTEEN_VIN_USER / SEVENTEEN_VIN_PASSWORD 后重启）'}</p>
+      <p class="muted" style="font-size:.83rem">在线 VIN 数据源：${settings._vin_provider
+        ? `<span class="chip chip-green">已接入 ${{ jisuapi: "极速数据", tianapi: "天行数据", "17vin": "17vin" }[settings._vin_provider] || settings._vin_provider}</span>`
+        : '未配置（推荐极速数据：注册送100次，之后约4.5分/次。设置环境变量 JISU_VIN_APPKEY 后重启，详见 docs/VIN_PROVIDERS.md）'}</p>
     </div>
 
     <div class="card"><h3>📱 微信小龙虾（ClawBot）直连</h3>

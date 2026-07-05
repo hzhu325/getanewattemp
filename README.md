@@ -59,7 +59,10 @@
 | `PARTSPILOT_PORT` | 端口 | 8704 |
 | `PARTSPILOT_HOST` | 监听地址 | 127.0.0.1 |
 | `PARTSPILOT_PASSWORD` | 管理后台密码（不设=免登录，仅限本机用） | 空 |
-| `SEVENTEEN_VIN_USER` / `SEVENTEEN_VIN_PASSWORD` | [17vin.com](http://www.17vin.com) 在线 VIN 解码账号 | 空（用本地解码） |
+| `JISU_VIN_APPKEY` | [极速数据](https://www.jisuapi.com/api/vin/) VIN 解码（推荐：送100次，≈4.5分/次） | 空（用本地解码） |
+| `TIANAPI_KEY` | [天行数据](https://www.tianapi.com/apiview/260) VIN 解码备选 | 空 |
+| `SEVENTEEN_VIN_USER` / `SEVENTEEN_VIN_PASSWORD` | 17vin.com（需开户，见 [数据源对比](docs/VIN_PROVIDERS.md)） | 空 |
+| `VIN_PROVIDER` | 强制指定数据源（jisuapi/tianapi/17vin） | 自动选择 |
 | `CLAWBOT_ENABLED` | 开启微信小龙虾直连通道 | 0 |
 | `CLAWBOT_BASE_URL` / `CLAWBOT_EP_*` | ilink 地址/端点覆盖 | 官方默认 |
 

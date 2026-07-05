@@ -26,13 +26,25 @@ class Config:
     # 管理后台密码；留空 = 不启用登录（仅建议本机使用）
     admin_password: str = field(default_factory=lambda: _env("PARTSPILOT_PASSWORD"))
 
-    # 17vin.com 在线 VIN 解码（可选）
+    # 在线 VIN 解码数据源（可选，配哪家用哪家；VIN_PROVIDER 可强制指定）
+    vin_provider: str = field(default_factory=lambda: _env("VIN_PROVIDER"))
+    vin_online_timeout: float = field(default_factory=lambda: float(_env("VIN_ONLINE_TIMEOUT", "8")))
+    # 极速数据 jisuapi.com（送100次，¥450/万次）
+    jisu_vin_appkey: str = field(default_factory=lambda: _env("JISU_VIN_APPKEY"))
+    jisu_vin_url: str = field(
+        default_factory=lambda: _env("JISU_VIN_URL", "https://api.jisuapi.com/vin/query")
+    )
+    # 天行数据 tianapi.com（送5次，约6.5分/次）
+    tianapi_key: str = field(default_factory=lambda: _env("TIANAPI_KEY"))
+    tianapi_vin_url: str = field(
+        default_factory=lambda: _env("TIANAPI_VIN_URL", "https://apis.tianapi.com/chavin/index")
+    )
+    # 17vin.com（需一次性开户）
     seventeen_vin_user: str = field(default_factory=lambda: _env("SEVENTEEN_VIN_USER"))
     seventeen_vin_password: str = field(default_factory=lambda: _env("SEVENTEEN_VIN_PASSWORD"))
     seventeen_vin_base_url: str = field(
         default_factory=lambda: _env("SEVENTEEN_VIN_BASE_URL", "http://api.17vin.com:8080/")
     )
-    seventeen_vin_timeout: float = field(default_factory=lambda: float(_env("SEVENTEEN_VIN_TIMEOUT", "8")))
 
     # 微信小龙虾（ClawBot / ilink）直连通道（可选）
     clawbot_enabled: bool = field(default_factory=lambda: _env("CLAWBOT_ENABLED", "0") == "1")

@@ -557,11 +557,12 @@ def vin_history(request: Request):
 
 @router.get("/settings")
 def get_settings_api(request: Request):
+    from partspilot.vin.providers import pick_provider
+
     config = request.app.state.config
     settings = store.get_settings(_db(request))
-    settings["_seventeen_vin_configured"] = bool(
-        config.seventeen_vin_user and config.seventeen_vin_password
-    )
+    picked = pick_provider(config)
+    settings["_vin_provider"] = picked[0] if picked else ""
     return settings
 
 
